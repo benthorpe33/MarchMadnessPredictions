@@ -408,8 +408,9 @@ for (year in 2002:2019)
 
 kenPomData2021 &lt;- getKenPomYearData(2021)
 
+names(kenPomData)&lt;-tolower(names(kenPomData))
 names(kenPomData2021)&lt;-tolower(names(kenPomData2021))
-# For the features needed for predicting the current year, get just the current year&#39;s data.</code></pre>
+names(results)&lt;-tolower(names(results))</code></pre>
 <pre class="r"><code>kenPomData &lt;- kenPomData %&gt;%
   filter(rk != &quot;Rk&quot;) %&gt;%
   filter(!is.na(rk)) %&gt;%
@@ -420,6 +421,9 @@ kenPomData2021 &lt;- kenPomData2021 %&gt;%
   filter(!is.na(rk)) %&gt;%
   filter(rk != &quot;&quot;)
 
+kenPomData &lt;- kenPomData %&gt;%
+  mutate(team = gsub(&quot;[.]&quot;, &quot;&quot;, team))
+
 kenPomData2021 &lt;- kenPomData2021 %&gt;%
   mutate(team = gsub(&quot;[.]&quot;, &quot;&quot;, team))
 
@@ -427,8 +431,22 @@ kenPomData2021 &lt;- kenPomData2021 %&gt;%
   mutate(seed = parse_number(team)) %&gt;%
   filter(!is.na(seed))
 
+kenPomData$team &lt;- gsub(&#39;[0-9]+&#39;, &#39;&#39;, kenPomData$team)
+kenPomData$team &lt;- trimws(kenPomData$team, &quot;r&quot;)
+
 results &lt;- results %&gt;%
-  rename(higher_score = Score, lower_score = Score.1)</code></pre>
+  rename(team = lowerteam)
+
+kenPomData &lt;- subset(kenPomData, select = -c(conf, nc_adjem, nc_adjem_r, sos_adjem, sos_adjem_r, oppo, oppo_r, oppd, oppd_r))</code></pre>
+<pre class="r"><code>all_data &lt;- merge(all_data, kenPomData, by = c(&quot;year&quot;, &quot;team&quot;))
+
+all_data &lt;- all_data %&gt;%
+  rename(lowerteam = team)
+
+kenPomData %&gt;% group_by(team) %&gt;% count()
+results %&gt;% group_by(team) %&gt;% count()
+
+write.csv(all_data,&quot;all_data.csv&quot;, row.names = TRUE)</code></pre>
 
 
 

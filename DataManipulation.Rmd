@@ -49,8 +49,9 @@ for (year in 2002:2019)
 
 kenPomData2021 <- getKenPomYearData(2021)
 
+names(kenPomData)<-tolower(names(kenPomData))
 names(kenPomData2021)<-tolower(names(kenPomData2021))
-# For the features needed for predicting the current year, get just the current year's data.
+names(results)<-tolower(names(results))
 ```
 
 ```{r cleaning, eval=FALSE}
@@ -64,6 +65,9 @@ kenPomData2021 <- kenPomData2021 %>%
   filter(!is.na(rk)) %>%
   filter(rk != "")
 
+kenPomData <- kenPomData %>%
+  mutate(team = gsub("[.]", "", team))
+
 kenPomData2021 <- kenPomData2021 %>%
   mutate(team = gsub("[.]", "", team))
 
@@ -71,10 +75,29 @@ kenPomData2021 <- kenPomData2021 %>%
   mutate(seed = parse_number(team)) %>%
   filter(!is.na(seed))
 
-results <- results %>%
-  rename(higher_score = Score, lower_score = Score.1)
+kenPomData$team <- gsub('[0-9]+', '', kenPomData$team)
+kenPomData$team <- trimws(kenPomData$team, "r")
 
+results <- results %>%
+  rename(team = lowerteam)
+
+kenPomData <- subset(kenPomData, select = -c(conf, nc_adjem, nc_adjem_r, sos_adjem, sos_adjem_r, oppo, oppo_r, oppd, oppd_r))
+```
+
+```{r joinData, eval=FALSE}
+all_data <- merge(all_data, kenPomData, by = c("year", "team"))
+
+all_data <- all_data %>%
+  rename(lowerteam = team)
+
+kenPomData %>% group_by(team) %>% count()
+results %>% group_by(team) %>% count()
+
+write.csv(all_data,"all_data.csv", row.names = TRUE)
 
 ```
+
+
+
 
 
