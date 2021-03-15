@@ -15,19 +15,10 @@ library(tidyverse)
 library(readr)
 ```
 
-```{r data}
-years <- seq(2010,2021)
 
-url <- paste0("https://www.sports-reference.com/cbb/seasons/", years, 
-                  "-ratings.html", sep="")
+```{r getData, eval=FALSE}
+results <- read.csv("Big_Dance_CSV.csv")
 
-webpage <- read_html(url)
-
-col_names <- webpage %>% 
-        html_nodes(".center , .left , .right")
-```
-
-```{r kenPom}
 kenPomData <- data.frame()
 inputPath <- "2019Data\\" # Location for storing the data to be used as an input to the ML work.
 
@@ -62,7 +53,7 @@ names(kenPomData2021)<-tolower(names(kenPomData2021))
 # For the features needed for predicting the current year, get just the current year's data.
 ```
 
-```{r cleaning}
+```{r cleaning, eval=FALSE}
 kenPomData <- kenPomData %>%
   filter(rk != "Rk") %>%
   filter(!is.na(rk)) %>%
@@ -80,7 +71,10 @@ kenPomData2021 <- kenPomData2021 %>%
   mutate(seed = parse_number(team)) %>%
   filter(!is.na(seed))
 
-parse_number(kenPomData2021$team)
+results <- results %>%
+  rename(higher_score = Score, lower_score = Score.1)
+
+
 ```
 
 
