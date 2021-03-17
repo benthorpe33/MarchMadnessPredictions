@@ -377,6 +377,9 @@ summary {
 
 
 <pre class="r"><code>results &lt;- read.csv(&quot;Big_Dance_CSV.csv&quot;)
+results &lt;- subset(results, select = -Winner )
+
+matchups &lt;- read.csv(&quot;FirstRound2021.csv&quot;)
 
 kenPomData &lt;- data.frame()
 inputPath &lt;- &quot;2019Data\\&quot; # Location for storing the data to be used as an input to the ML work.
@@ -434,11 +437,21 @@ kenPomData2021 &lt;- kenPomData2021 %&gt;%
 kenPomData$team &lt;- gsub(&#39;[0-9]+&#39;, &#39;&#39;, kenPomData$team)
 kenPomData$team &lt;- trimws(kenPomData$team, &quot;r&quot;)
 
+kenPomData2021$team &lt;- gsub(&#39;[0-9]+&#39;, &#39;&#39;, kenPomData2021$team)
+kenPomData2021$team &lt;- trimws(kenPomData2021$team, &quot;r&quot;)
+
 results &lt;- results %&gt;%
   rename(team = lowerteam)
 
-kenPomData &lt;- subset(kenPomData, select = -c(conf, nc_adjem, nc_adjem_r, sos_adjem, sos_adjem_r, oppo, oppo_r, oppd, oppd_r))</code></pre>
-<pre class="r"><code>all_data &lt;- merge(all_data, kenPomData, by = c(&quot;year&quot;, &quot;team&quot;))
+kenPomData &lt;- subset(kenPomData, select = -c(conf, nc_adjem, nc_adjem_r, sos_adjem, sos_adjem_r, oppo, oppo_r, oppd, oppd_r))
+
+kenPomData2021 &lt;- subset(kenPomData2021, select = -c(conf, nc_adjem, nc_adjem_r, sos_adjem, sos_adjem_r, oppo, oppo_r, oppd, oppd_r))
+
+kenPomData2021 %&gt;%
+  filter(team == &quot;Wisconsin&quot; | team == &quot;North Carolina&quot;)</code></pre>
+<pre class="r"><code>real_data &lt;- merge(real_data, kenPomData, by.x = c(&quot;year&quot;, &quot;lowerteam&quot;), by.y = c(&quot;year&quot;, &quot;team&quot;))
+
+all_data &lt;- merge(all_data, kenPomData, by = c(&quot;year&quot;, &quot;team&quot;))
 
 all_data &lt;- all_data %&gt;%
   rename(lowerteam = team)
@@ -446,7 +459,90 @@ all_data &lt;- all_data %&gt;%
 kenPomData %&gt;% group_by(team) %&gt;% count()
 results %&gt;% group_by(team) %&gt;% count()
 
-write.csv(all_data,&quot;all_data.csv&quot;, row.names = TRUE)</code></pre>
+write.csv(real_data,&quot;all_data.csv&quot;, row.names = TRUE)
+
+col_order &lt;- c(&quot;round&quot;, &quot;higherseed&quot;, &quot;lowerseed&quot;, &quot;higher_score&quot;, &quot;lower_score&quot;, &quot;higherteam&quot;, &quot;lowerteam&quot;,  &quot;winner&quot;, &quot;rk.x&quot;, &quot;record.x&quot;, &quot;adjem.x&quot;, &quot;adjo.x&quot;, &quot;adjo_r.x&quot;, &quot;adjd.x&quot;, &quot;adjd_r.x&quot;, &quot;adjt.x&quot;, &quot;adjt_r.x&quot;, &quot;luck.x&quot;, &quot;luck_r.x&quot;, &quot;rk.y&quot;, &quot;record.y&quot;, &quot;adjem.y&quot;, &quot;adjo.y&quot;, &quot;adjo_r.y&quot;, &quot;adjd.y&quot;, &quot;adjd_r.y&quot;, &quot;adjt.y&quot;, &quot;adjt_r.y&quot;, &quot;luck.y&quot;, &quot;luck_r.y&quot;,  &quot;year&quot;)
+
+all_data &lt;- all_data %&gt;%
+  mutate(round = as.numeric(round), higherseed = as.numeric(higherseed), lowerseed = as.numeric(lowerseed))
+
+cols_to_numeric &lt;- c(&quot;rk.x&quot;, &quot;adjem.x&quot;, &quot;adjo.x&quot;, &quot;adjo_r.x&quot;, &quot;adjd.x&quot;, &quot;adjd_r.x&quot;, &quot;adjt.x&quot;, &quot;adjt_r.x&quot;, &quot;luck_r.x&quot;, &quot;rk.y&quot;, &quot;adjem.y&quot;, &quot;adjo.y&quot;, &quot;adjo_r.y&quot;, &quot;adjd.y&quot;, &quot;adjd_r.y&quot;, &quot;adjt.y&quot;, &quot;adjt_r.y&quot;, &quot;luck_r.y&quot;)
+
+for(x in cols_to_numeric){
+  real_data[[x]] &lt;- as.numeric(real_data[[x]])
+}
+
+make_numeric(cols_to_numeric)
+
+real_data &lt;- real_data %&gt;%
+  rename(higher_score = score, lower_score = score.1)
+
+lm_higher_score_main &lt;- lm(higher_score ~ adjo_r.x + adjd_r.y + adjt_r.x + adjt_r.y, data = real_data)
+tidy(lm_higher_score)
+
+lm_lower_score_main &lt;- lm(lower_score ~ adjo_r.y + adjd_r.x + adjt_r.y + adjt_r.x, data = real_data)
+tidy(lm_lower_score)
+
+new_data &lt;- merge(new_data, kenPomData2021, by.y = &quot;team&quot;, by.x = &quot;lowerseed&quot;)
+
+most_data &lt;- real_data %&gt;% filter(year != 2018)
+data2019 &lt;- real_data %&gt;% filter(year == 2018)
+
+lm_higher_score &lt;- lm(higher_score ~ adjo_r.x + adjd_r.y + adjt_r.x + adjt_r.y, data = most_data)
+tidy(lm_higher_score)
+
+lm_lower_score &lt;- lm(lower_score ~ adjo_r.y + adjd_r.x + adjt_r.y + adjt_r.x, data = most_data)
+tidy(lm_lower_score)
+
+predicted_scores &lt;- data.frame()
+predicted_scores &lt;- predicted_scores %&gt;%
+  mutate(seed1 = &quot;&quot;, seed2 = &quot;&quot;, higherteam = &quot;&quot;, lowerteam = &quot;&quot;, higher_score = 0, lower_score = 0, predicted_higher_score = 0, predicted_lower_score = 0)
+
+for(x in data2019$higherteam){
+  temp &lt;- data2019 %&gt;%
+    filter(higherteam == x)
+  seed1 = temp$higherseed
+  seed2 = temp$lowerseed
+  higher_team = temp$higherteam
+  lower_team = temp$lowerteam
+  higher_score = temp$higher_score
+  lower_score = temp$lower_score
+  predicted_high = predict(lm_higher_score, temp)
+  predicted_low = predict(lm_lower_score, temp)
+  
+  df&lt;-data.frame(seed1, seed2, higher_team, lower_team, higher_score, lower_score, predicted_high, predicted_low)
+  predicted_scores &lt;- rbind(predicted_scores, df)
+}
+
+predicted_scores &lt;- predicted_scores %&gt;%
+  mutate(real_diff = higher_score - lower_score, pred_diff = predicted_high - predicted_low)
+
+predicted_scores &lt;- predicted_scores %&gt;%
+  mutate(correct = if_else((real_diff &lt; 0 &amp; pred_diff &lt; 0) |  (real_diff &gt; 0 &amp; pred_diff &gt; 0), TRUE, FALSE))
+
+predicted_scores &lt;- predicted_scores %&gt;% unique()
+
+predicted_scores %&gt;% count(correct)</code></pre>
+<pre class="r"><code>predicted_scores2 &lt;- data.frame()
+predicted_scores2 &lt;- predicted_scores2 %&gt;%
+  mutate(higherteam = &quot;&quot;, lowerteam = &quot;&quot;, predicted_higher_score = 0, predicted_lower_score = 0)
+
+for(x in new_data$higherseed){
+  temp &lt;- new_data %&gt;%
+    filter(higherseed == x)
+  higher_team = temp$higherseed
+  lower_team = temp$lowerseed
+  predicted_high = predict(lm_higher_score_main, temp)
+  predicted_low = predict(lm_lower_score_main, temp)
+  
+  df&lt;-data.frame(higher_team, lower_team, predicted_high, predicted_low)
+  predicted_scores2 &lt;- rbind(predicted_scores2, df)
+}
+
+predicted_scores2 &lt;- predicted_scores2 %&gt;%
+  mutate(pred_diff = predicted_high - predicted_low)
+
+predicted_scores2 &lt;- predicted_scores2 %&gt;% unique()</code></pre>
 
 
 
