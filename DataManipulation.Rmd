@@ -13,12 +13,18 @@ library(XML)
 library(RCurl)
 library(tidyverse)
 library(readr)
+library(xgboost)
 ```
 
 
 ```{r getData, eval=FALSE}
 results <- read.csv("Big_Dance_CSV.csv")
 results <- subset(results, select = -Winner )
+
+all_data <- read.csv("all_data.csv")
+all_data <- all_data %>%
+  mutate(higher_score = score, lower_score = score.1)
+all_data <- subset(all_data, select = -score.1)
 
 matchups <- read.csv("FirstRound2021.csv")
 
@@ -44,16 +50,13 @@ getKenPomYearData <- function(year)
     return(data)
 }
 
-for (year in 2002:2019)
+for (year in 2002:2021)
 {
     kenPomYear <- getKenPomYearData(year)
     kenPomData <- rbind(kenPomData, kenPomYear)
 }
 
-kenPomData2021 <- getKenPomYearData(2021)
-
 names(kenPomData)<-tolower(names(kenPomData))
-names(kenPomData2021)<-tolower(names(kenPomData2021))
 names(results)<-tolower(names(results))
 ```
 
@@ -71,33 +74,24 @@ kenPomData2021 <- kenPomData2021 %>%
 kenPomData <- kenPomData %>%
   mutate(team = gsub("[.]", "", team))
 
+kenPomData$team <- gsub('[0-9]+', '', kenPomData2021$team)
+kenPomData$team <- trimws(kenPomData$team, "r")
+
 kenPomData2021 <- kenPomData2021 %>%
   mutate(team = gsub("[.]", "", team))
-
-kenPomData2021 <- kenPomData2021 %>%
-  mutate(seed = parse_number(team)) %>%
-  filter(!is.na(seed))
-
-kenPomData$team <- gsub('[0-9]+', '', kenPomData$team)
-kenPomData$team <- trimws(kenPomData$team, "r")
 
 kenPomData2021$team <- gsub('[0-9]+', '', kenPomData2021$team)
 kenPomData2021$team <- trimws(kenPomData2021$team, "r")
 
-results <- results %>%
-  rename(team = lowerteam)
-
 kenPomData <- subset(kenPomData, select = -c(conf, nc_adjem, nc_adjem_r, sos_adjem, sos_adjem_r, oppo, oppo_r, oppd, oppd_r))
 
-kenPomData2021 <- subset(kenPomData2021, select = -c(conf, nc_adjem, nc_adjem_r, sos_adjem, sos_adjem_r, oppo, oppo_r, oppd, oppd_r))
-
-kenPomData2021 %>%
-  filter(team == "Wisconsin" | team == "North Carolina")
+new_data <- new_data %>%
+  mutate(higherseed = gsub("[.]", "", higherseed), lowerseed = gsub("[.]", "", lowerseed))
 ```
 
 ```{r joinData, eval=FALSE}
 
-real_data <- merge(real_data, kenPomData, by.x = c("year", "lowerteam"), by.y = c("year", "team"))
+real_data <- merge(results, kenPomData, by.x = c("year", "higherteam"), by.y = c("year", "team"))
 
 all_data <- merge(all_data, kenPomData, by = c("year", "team"))
 
@@ -107,39 +101,28 @@ all_data <- all_data %>%
 kenPomData %>% group_by(team) %>% count()
 results %>% group_by(team) %>% count()
 
-write.csv(real_data,"all_data.csv", row.names = TRUE)
-
-col_order <- c("round", "higherseed", "lowerseed", "higher_score", "lower_score", "higherteam", "lowerteam",  "winner", "rk.x", "record.x", "adjem.x", "adjo.x", "adjo_r.x", "adjd.x", "adjd_r.x", "adjt.x", "adjt_r.x", "luck.x", "luck_r.x", "rk.y", "record.y", "adjem.y", "adjo.y", "adjo_r.y", "adjd.y", "adjd_r.y", "adjt.y", "adjt_r.y", "luck.y", "luck_r.y",  "year")
-
 all_data <- all_data %>%
-  mutate(round = as.numeric(round), higherseed = as.numeric(higherseed), lowerseed = as.numeric(lowerseed))
+  mutate(winner = if_else(higher_score > lower_score, "1", "0")) %>%
+  mutate(winner = factor(winner))
 
-cols_to_numeric <- c("rk.x", "adjem.x", "adjo.x", "adjo_r.x", "adjd.x", "adjd_r.x", "adjt.x", "adjt_r.x", "luck_r.x", "rk.y", "adjem.y", "adjo.y", "adjo_r.y", "adjd.y", "adjd_r.y", "adjt.y", "adjt_r.y", "luck_r.y")
+write.csv(all_data,"all_data.csv", row.names = TRUE)
 
-for(x in cols_to_numeric){
-  real_data[[x]] <- as.numeric(real_data[[x]])
-}
+col_order <- c("round", "higherseed", "lowerseed", "higher_score", "lower_score", "higherteam", "lowerteam", "rk.x", "adjem.x", "adjo.x", "adjo_r.x", "adjd.x", "adjd_r.x", "adjt.x", "adjt_r.x", "luck.x", "luck_r.x", "rk.y", "adjem.y", "adjo.y", "adjo_r.y", "adjd.y", "adjd_r.y", "adjt.y", "adjt_r.y", "year")
 
-make_numeric(cols_to_numeric)
+all_data <- all_data[, col_order]
 
-real_data <- real_data %>%
-  rename(higher_score = score, lower_score = score.1)
+glm1 <- glm(winner ~ adjo.x + adjd.x + adjo.y + adjd.y + adjt.y + adjt.x, data = all_data, family = binomial)
 
-lm_higher_score_main <- lm(higher_score ~ adjo_r.x + adjd_r.y + adjt_r.x + adjt_r.y, data = real_data)
+most_data <- all_data %>% filter(year != 2019)
+data2019 <- all_data %>% filter(year == 2019)
+
+glm2 <- glm(winner ~ adjo.x + adjd.x + adjo.y + adjd.y + adjt.y + adjt.x, data = all_data, family = binomial)
+tidy(glm2)
+
+lm_higher_score <- lm(higher_score ~ adjo.x + adjd.y + adjt.x + adjt.y, data = most_data)
 tidy(lm_higher_score)
 
-lm_lower_score_main <- lm(lower_score ~ adjo_r.y + adjd_r.x + adjt_r.y + adjt_r.x, data = real_data)
-tidy(lm_lower_score)
-
-new_data <- merge(new_data, kenPomData2021, by.y = "team", by.x = "lowerseed")
-
-most_data <- real_data %>% filter(year != 2018)
-data2019 <- real_data %>% filter(year == 2018)
-
-lm_higher_score <- lm(higher_score ~ adjo_r.x + adjd_r.y + adjt_r.x + adjt_r.y, data = most_data)
-tidy(lm_higher_score)
-
-lm_lower_score <- lm(lower_score ~ adjo_r.y + adjd_r.x + adjt_r.y + adjt_r.x, data = most_data)
+lm_lower_score <- lm(lower_score ~ adjo.y + adjd.x + adjt.y + adjt.x, data = most_data)
 tidy(lm_lower_score)
 
 predicted_scores <- data.frame()
@@ -170,32 +153,88 @@ predicted_scores <- predicted_scores %>%
 
 predicted_scores <- predicted_scores %>% unique()
 
+
+
+predicted_scores <- data.frame()
+predicted_scores <- predicted_scores %>%
+  mutate(seed1 = "", seed2 = "", higherteam = "", lowerteam = "", winner = factor(0), pred_winner = 0)
+
+for(x in all_data$higherteam){
+  temp <- all_data %>%
+    filter(higherteam == x)
+  seed1 = temp$higherseed
+  seed2 = temp$lowerseed
+  higher_team = temp$higherteam
+  lower_team = temp$lowerteam
+  winner = temp$winner
+  pred_winner= predict(glm2, temp)
+  
+  df<-data.frame(seed1, seed2, higher_team, lower_team, winner, pred_winner)
+  predicted_scores <- rbind(predicted_scores, df)
+}
+
+predicted_scores <- predicted_scores %>%
+  mutate(pred_winner = if_else(pred_winner < 0.1, 0, 1)) %>%
+  mutate(pred_winner = factor(pred_winner)) %>%
+  mutate(correct = if_else(pred_winner == winner, TRUE, FALSE))
+
+predicted_scores <- predicted_scores %>% unique()
+
 predicted_scores %>% count(correct)
 ```
 
 ```{r for2021, eval=FALSE}
 predicted_scores2 <- data.frame()
 predicted_scores2 <- predicted_scores2 %>%
-  mutate(higherteam = "", lowerteam = "", predicted_higher_score = 0, predicted_lower_score = 0)
+  mutate(higherteam = "", lowerteam = "", pred_winner = 0)
 
 for(x in new_data$higherseed){
   temp <- new_data %>%
     filter(higherseed == x)
   higher_team = temp$higherseed
   lower_team = temp$lowerseed
-  predicted_high = predict(lm_higher_score_main, temp)
-  predicted_low = predict(lm_lower_score_main, temp)
-  
-  df<-data.frame(higher_team, lower_team, predicted_high, predicted_low)
+  pred_winner = predict(glm1, temp)
+  df<-data.frame(higher_team, lower_team, pred_winner)
   predicted_scores2 <- rbind(predicted_scores2, df)
 }
-
+ 
 predicted_scores2 <- predicted_scores2 %>%
-  mutate(pred_diff = predicted_high - predicted_low)
+  mutate(pred_winner = if_else(pred_winner < 0.1, 0, 1)) %>%
+  mutate(pred_winner = factor(pred_winner))
 
 predicted_scores2 <- predicted_scores2 %>% unique()
 ```
 
+```{r xgboost, eval=FALSE}
+set.seed(33)
+model_data <- all_data %>%
+  mutate(diff_score = as.numeric(diff_score)) %>%
+  select(diff_score, adjo.x, adjd.x, adjt.x, adjo.y, adjd.y, adjt.y)
+model_data <- model_data[sample(1:nrow(model_data)), ]
 
+labels <- model_data %>%
+  select(diff_score)
+
+final <- data.matrix(model_data)
+
+numberOfTrainingSamples <- round(length(labels$diff_score) * .7)
+
+train_data <- final[1:numberOfTrainingSamples,]
+train_labels <- labels[1:numberOfTrainingSamples,]
+
+test_data <- final[-(1:numberOfTrainingSamples),]
+test_labels <- labels[-(1:numberOfTrainingSamples),]
+
+dtrain <- xgb.DMatrix(data = train_data, label= train_labels)
+dtest <- xgb.DMatrix(data = test_data, label= test_labels)
+
+xgb <- xgboost(data = dtrain,  
+                 nround = 10)
+
+pred <- predict(xgb, dtest)
+
+err <- mean(pred - test_labels)
+print(paste("test-error=", err))
+```
 
 
