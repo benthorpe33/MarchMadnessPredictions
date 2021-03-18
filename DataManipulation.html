@@ -560,6 +560,9 @@ model_data &lt;- model_data[sample(1:nrow(model_data)), ]
 labels &lt;- model_data %&gt;%
   select(diff_score)
 
+model_data &lt;- model_data %&gt;%
+  select(-diff_score)
+
 final &lt;- data.matrix(model_data)
 
 numberOfTrainingSamples &lt;- round(length(labels$diff_score) * .7)
@@ -578,8 +581,26 @@ xgb &lt;- xgboost(data = dtrain,
 
 pred &lt;- predict(xgb, dtest)
 
-err &lt;- mean(pred - test_labels)
-print(paste(&quot;test-error=&quot;, err))</code></pre>
+err &lt;- median(pred - test_labels)
+print(paste(&quot;test-error=&quot;, err))
+
+importance_matrix &lt;- xgb.importance(names(final), model = xgb)
+
+# and plot it!
+xgb.plot.importance(importance_matrix)
+
+#pred - test_labels
+
+
+
+test_data2021 &lt;- new_data %&gt;%
+  select(adjo.x, adjd.x, adjt.x, adjo.y, adjd.y, adjt.y)
+test_data2021 &lt;- as.matrix(test_data2021)
+
+dtest &lt;- xgb.DMatrix(data = test_data2021)
+
+new_data &lt;- new_data %&gt;%
+  mutate(pred_diff = data.frame(predict(xgb, dtest)))</code></pre>
 
 
 
