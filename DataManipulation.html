@@ -438,11 +438,23 @@ kenPomData2021 &lt;- kenPomData2021 %&gt;%
 kenPomData2021$team &lt;- gsub(&#39;[0-9]+&#39;, &#39;&#39;, kenPomData2021$team)
 kenPomData2021$team &lt;- trimws(kenPomData2021$team, &quot;r&quot;)
 
+kenPomData2021 &lt;- kenPomData2021 %&gt;% 
+  select(team, adjo, adjd, adjt) %&gt;%
+  mutate(adjo = as.numeric(adjo), adjd = as.numeric
+         (adjd), adjt = as.numeric(adjt))
+
 kenPomData &lt;- subset(kenPomData, select = -c(conf, nc_adjem, nc_adjem_r, sos_adjem, sos_adjem_r, oppo, oppo_r, oppd, oppd_r))
 
-new_data &lt;- new_data %&gt;%
-  mutate(higherseed = gsub(&quot;[.]&quot;, &quot;&quot;, higherseed), lowerseed = gsub(&quot;[.]&quot;, &quot;&quot;, lowerseed))</code></pre>
+matchups &lt;- matchups %&gt;%
+  mutate(higherseed = gsub(&quot;[.]&quot;, &quot;&quot;, higherseed), lowerseed = gsub(&quot;[.]&quot;, &quot;&quot;, lowerseed)) %&gt;%
+  mutate(lowerseed = if_else(lowerseed == &quot;Norfolk/Appalachian&quot;, &quot;Norfolk St&quot;, lowerseed)) %&gt;%
+  mutate(lowerseed = if_else(lowerseed == &quot;MSM/TexasSouthern&quot;, &quot;Texas Southern&quot;, lowerseed)) %&gt;%
+  mutate(lowerseed = if_else(lowerseed == &quot;Wichita/Drake&quot;, &quot;Drake&quot;, lowerseed)) %&gt;%
+  mutate(lowerseed = if_else(lowerseed == &quot;Michian/UCLA&quot;, &quot;UCLA&quot;, lowerseed)) %&gt;%
+  mutate(lowerseed = if_else(lowerseed == &quot;Eastern Wash&quot;, &quot;Eastern Washington&quot;, lowerseed))</code></pre>
 <pre class="r"><code>real_data &lt;- merge(results, kenPomData, by.x = c(&quot;year&quot;, &quot;higherteam&quot;), by.y = c(&quot;year&quot;, &quot;team&quot;))
+
+matchups &lt;- merge(matchups, kenPomData2021, by.x = &quot;lowerseed&quot;, by.y = &quot;team&quot;)
 
 all_data &lt;- merge(all_data, kenPomData, by = c(&quot;year&quot;, &quot;team&quot;))
 
@@ -577,7 +589,7 @@ dtrain &lt;- xgb.DMatrix(data = train_data, label= train_labels)
 dtest &lt;- xgb.DMatrix(data = test_data, label= test_labels)
 
 xgb &lt;- xgboost(data = dtrain,  
-                 nround = 10)
+                 nround = 20)
 
 pred &lt;- predict(xgb, dtest)
 
@@ -589,18 +601,49 @@ importance_matrix &lt;- xgb.importance(names(final), model = xgb)
 # and plot it!
 xgb.plot.importance(importance_matrix)
 
-#pred - test_labels
+test_labels &lt;- data.frame(test_labels)
+test_labels &lt;- test_labels %&gt;%
+  mutate(pred_diff = predict(xgb, dtest)) %&gt;%
+  mutate(correct = if_else((test_labels &gt; 0 &amp; pred_diff &gt; 0) | (test_labels &lt; 0 &amp; pred_diff &lt; 0), TRUE, FALSE)) %&gt;% 
+  mutate(residual = test_labels - pred_diff)
+
+median(test_labels$residual)
 
 
-
-test_data2021 &lt;- new_data %&gt;%
+new_model_data &lt;- matchups %&gt;%
   select(adjo.x, adjd.x, adjt.x, adjo.y, adjd.y, adjt.y)
-test_data2021 &lt;- as.matrix(test_data2021)
+
+test_data2019 &lt;- data2019 %&gt;%
+  select(adjo.x, adjd.x, adjt.x, adjo.y, adjd.y, adjt.y)
+test_data2019_matrix &lt;- as.matrix(test_data2019)
+
+dtest &lt;- xgb.DMatrix(data = test_data2019_matrix)
+
+new_data2 &lt;- test_data2019 %&gt;%
+  mutate(pred_diff = data.frame(predict(xgb, dtest))) %&gt;% unique()
+
+matchups_with_pred &lt;- data2019 %&gt;%
+  mutate(pred_diff = new_data2$pred_diff)
+
+matchups_with_pred &lt;- matchups_with_pred %&gt;%
+  mutate(score_diff = higher_score - lower_score) %&gt;%
+  mutate(correct = if_else((score_diff &gt; 0 &amp; pred_diff &gt; 0) | (score_diff &lt; 0 &amp; pred_diff &lt; 0), TRUE, FALSE)) %&gt;%
+  mutate(residual = score_diff - pred_diff)
+         
+matchups_with_pred %&gt;% count(correct)
+
+write.csv(matchups_with_pred,&quot;matchups_with_pred.csv&quot;, row.names = TRUE)
+
+
+test_data2021 &lt;- as.matrix(new_model_data)
 
 dtest &lt;- xgb.DMatrix(data = test_data2021)
 
-new_data &lt;- new_data %&gt;%
-  mutate(pred_diff = data.frame(predict(xgb, dtest)))</code></pre>
+new_data2 &lt;- new_model_data %&gt;%
+  mutate(pred_diff = data.frame(predict(xgb, dtest))) %&gt;% unique()
+
+matchups_with_pred &lt;- matchups %&gt;%
+  mutate(pred_diff = new_data2$pred_diff)</code></pre>
 
 
 

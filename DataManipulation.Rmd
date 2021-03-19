@@ -83,15 +83,28 @@ kenPomData2021 <- kenPomData2021 %>%
 kenPomData2021$team <- gsub('[0-9]+', '', kenPomData2021$team)
 kenPomData2021$team <- trimws(kenPomData2021$team, "r")
 
+kenPomData2021 <- kenPomData2021 %>% 
+  select(team, adjo, adjd, adjt) %>%
+  mutate(adjo = as.numeric(adjo), adjd = as.numeric
+         (adjd), adjt = as.numeric(adjt))
+
 kenPomData <- subset(kenPomData, select = -c(conf, nc_adjem, nc_adjem_r, sos_adjem, sos_adjem_r, oppo, oppo_r, oppd, oppd_r))
 
-new_data <- new_data %>%
-  mutate(higherseed = gsub("[.]", "", higherseed), lowerseed = gsub("[.]", "", lowerseed))
+matchups <- matchups %>%
+  mutate(higherseed = gsub("[.]", "", higherseed), lowerseed = gsub("[.]", "", lowerseed)) %>%
+  mutate(lowerseed = if_else(lowerseed == "Norfolk/Appalachian", "Norfolk St", lowerseed)) %>%
+  mutate(lowerseed = if_else(lowerseed == "MSM/TexasSouthern", "Texas Southern", lowerseed)) %>%
+  mutate(lowerseed = if_else(lowerseed == "Wichita/Drake", "Drake", lowerseed)) %>%
+  mutate(lowerseed = if_else(lowerseed == "Michian/UCLA", "UCLA", lowerseed)) %>%
+  mutate(lowerseed = if_else(lowerseed == "Eastern Wash", "Eastern Washington", lowerseed))
+  
 ```
 
 ```{r joinData, eval=FALSE}
 
 real_data <- merge(results, kenPomData, by.x = c("year", "higherteam"), by.y = c("year", "team"))
+
+matchups <- merge(matchups, kenPomData2021, by.x = "lowerseed", by.y = "team")
 
 all_data <- merge(all_data, kenPomData, by = c("year", "team"))
 
@@ -232,7 +245,7 @@ dtrain <- xgb.DMatrix(data = train_data, label= train_labels)
 dtest <- xgb.DMatrix(data = test_data, label= test_labels)
 
 xgb <- xgboost(data = dtrain,  
-                 nround = 10)
+                 nround = 20)
 
 pred <- predict(xgb, dtest)
 
@@ -244,19 +257,49 @@ importance_matrix <- xgb.importance(names(final), model = xgb)
 # and plot it!
 xgb.plot.importance(importance_matrix)
 
-#pred - test_labels
+test_labels <- data.frame(test_labels)
+test_labels <- test_labels %>%
+  mutate(pred_diff = predict(xgb, dtest)) %>%
+  mutate(correct = if_else((test_labels > 0 & pred_diff > 0) | (test_labels < 0 & pred_diff < 0), TRUE, FALSE)) %>% 
+  mutate(residual = test_labels - pred_diff)
+
+median(test_labels$residual)
 
 
-
-test_data2021 <- new_data %>%
+new_model_data <- matchups %>%
   select(adjo.x, adjd.x, adjt.x, adjo.y, adjd.y, adjt.y)
-test_data2021 <- as.matrix(test_data2021)
+
+test_data2019 <- data2019 %>%
+  select(adjo.x, adjd.x, adjt.x, adjo.y, adjd.y, adjt.y)
+test_data2019_matrix <- as.matrix(test_data2019)
+
+dtest <- xgb.DMatrix(data = test_data2019_matrix)
+
+new_data2 <- test_data2019 %>%
+  mutate(pred_diff = data.frame(predict(xgb, dtest))) %>% unique()
+
+matchups_with_pred <- data2019 %>%
+  mutate(pred_diff = new_data2$pred_diff)
+
+matchups_with_pred <- matchups_with_pred %>%
+  mutate(score_diff = higher_score - lower_score) %>%
+  mutate(correct = if_else((score_diff > 0 & pred_diff > 0) | (score_diff < 0 & pred_diff < 0), TRUE, FALSE)) %>%
+  mutate(residual = score_diff - pred_diff)
+         
+matchups_with_pred %>% count(correct)
+
+write.csv(matchups_with_pred,"matchups_with_pred.csv", row.names = TRUE)
+
+
+test_data2021 <- as.matrix(new_model_data)
 
 dtest <- xgb.DMatrix(data = test_data2021)
 
-new_data <- new_data %>%
-  mutate(pred_diff = data.frame(predict(xgb, dtest)))
+new_data2 <- new_model_data %>%
+  mutate(pred_diff = data.frame(predict(xgb, dtest))) %>% unique()
 
+matchups_with_pred <- matchups %>%
+  mutate(pred_diff = new_data2$pred_diff)
 ```
 
 
