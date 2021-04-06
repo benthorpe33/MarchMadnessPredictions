@@ -385,6 +385,10 @@ all_data &lt;- all_data %&gt;%
 all_data &lt;- subset(all_data, select = -score.1)
 
 matchups &lt;- read.csv(&quot;FirstRound2021.csv&quot;)
+matchups2019 &lt;- read.csv(&quot;Spreads2019.csv&quot;)
+
+matchups &lt;- matchups %&gt;%
+  mutate(lowerseed = if_else(lowerseed == &quot;Oregon State&quot;, &quot;Oregon St&quot;, lowerseed))
 
 kenPomData &lt;- data.frame()
 inputPath &lt;- &quot;2019Data\\&quot; # Location for storing the data to be used as an input to the ML work.
@@ -414,6 +418,9 @@ for (year in 2002:2021)
     kenPomData &lt;- rbind(kenPomData, kenPomYear)
 }
 
+kenPomData2021 &lt;- getKenPomYearData(2021)
+
+names(kenPomData2021) &lt;- tolower(names(kenPomData2021))
 names(kenPomData)&lt;-tolower(names(kenPomData))
 names(results)&lt;-tolower(names(results))</code></pre>
 <pre class="r"><code>kenPomData &lt;- kenPomData %&gt;%
@@ -446,15 +453,24 @@ kenPomData2021 &lt;- kenPomData2021 %&gt;%
 kenPomData &lt;- subset(kenPomData, select = -c(conf, nc_adjem, nc_adjem_r, sos_adjem, sos_adjem_r, oppo, oppo_r, oppd, oppd_r))
 
 matchups &lt;- matchups %&gt;%
-  mutate(higherseed = gsub(&quot;[.]&quot;, &quot;&quot;, higherseed), lowerseed = gsub(&quot;[.]&quot;, &quot;&quot;, lowerseed)) %&gt;%
-  mutate(lowerseed = if_else(lowerseed == &quot;Norfolk/Appalachian&quot;, &quot;Norfolk St&quot;, lowerseed)) %&gt;%
-  mutate(lowerseed = if_else(lowerseed == &quot;MSM/TexasSouthern&quot;, &quot;Texas Southern&quot;, lowerseed)) %&gt;%
-  mutate(lowerseed = if_else(lowerseed == &quot;Wichita/Drake&quot;, &quot;Drake&quot;, lowerseed)) %&gt;%
-  mutate(lowerseed = if_else(lowerseed == &quot;Michian/UCLA&quot;, &quot;UCLA&quot;, lowerseed)) %&gt;%
-  mutate(lowerseed = if_else(lowerseed == &quot;Eastern Wash&quot;, &quot;Eastern Washington&quot;, lowerseed))</code></pre>
+  mutate(higherseed = gsub(&quot;[.]&quot;, &quot;&quot;, higherseed), lowerseed = gsub(&quot;[.]&quot;, &quot;&quot;, lowerseed))
+
+matchups2019 &lt;- matchups2019 %&gt;%
+  mutate(higherseed = gsub(&quot;[.]&quot;, &quot;&quot;, higherseed), lowerseed = gsub(&quot;[.]&quot;, &quot;&quot;, lowerseed))  
+
+matchups2019 &lt;- matchups2019 %&gt;%
+  mutate(adjo.x = as.numeric(adjo.x), adjd.x = as.numeric
+         (adjd.x), adjt.x = as.numeric(adjt.x), adjo.y = as.numeric(adjo.y), adjd.y = as.numeric
+         (adjd.y), adjt.y = as.numeric(adjt.y))</code></pre>
 <pre class="r"><code>real_data &lt;- merge(results, kenPomData, by.x = c(&quot;year&quot;, &quot;higherteam&quot;), by.y = c(&quot;year&quot;, &quot;team&quot;))
 
+kenPom2019 &lt;- kenPomData %&gt;%
+  filter(year == 2019)
+
+matchups &lt;- merge(matchups, kenPomData2021, by.x = &quot;higherseed&quot;, by.y = &quot;team&quot;)
 matchups &lt;- merge(matchups, kenPomData2021, by.x = &quot;lowerseed&quot;, by.y = &quot;team&quot;)
+matchups2019 &lt;- merge(matchups2019, kenPom2019, by.x = &quot;lowerseed&quot;, by.y = &quot;team&quot;)
+matchups2019 &lt;- matchups2019 %&gt;% unique()
 
 all_data &lt;- merge(all_data, kenPomData, by = c(&quot;year&quot;, &quot;team&quot;))
 
@@ -474,99 +490,9 @@ col_order &lt;- c(&quot;round&quot;, &quot;higherseed&quot;, &quot;lowerseed&quo
 
 all_data &lt;- all_data[, col_order]
 
-glm1 &lt;- glm(winner ~ adjo.x + adjd.x + adjo.y + adjd.y + adjt.y + adjt.x, data = all_data, family = binomial)
-
 most_data &lt;- all_data %&gt;% filter(year != 2019)
-data2019 &lt;- all_data %&gt;% filter(year == 2019)
-
-glm2 &lt;- glm(winner ~ adjo.x + adjd.x + adjo.y + adjd.y + adjt.y + adjt.x, data = all_data, family = binomial)
-tidy(glm2)
-
-lm_higher_score &lt;- lm(higher_score ~ adjo.x + adjd.y + adjt.x + adjt.y, data = most_data)
-tidy(lm_higher_score)
-
-lm_lower_score &lt;- lm(lower_score ~ adjo.y + adjd.x + adjt.y + adjt.x, data = most_data)
-tidy(lm_lower_score)
-
-predicted_scores &lt;- data.frame()
-predicted_scores &lt;- predicted_scores %&gt;%
-  mutate(seed1 = &quot;&quot;, seed2 = &quot;&quot;, higherteam = &quot;&quot;, lowerteam = &quot;&quot;, higher_score = 0, lower_score = 0, predicted_higher_score = 0, predicted_lower_score = 0)
-
-for(x in data2019$higherteam){
-  temp &lt;- data2019 %&gt;%
-    filter(higherteam == x)
-  seed1 = temp$higherseed
-  seed2 = temp$lowerseed
-  higher_team = temp$higherteam
-  lower_team = temp$lowerteam
-  higher_score = temp$higher_score
-  lower_score = temp$lower_score
-  predicted_high = predict(lm_higher_score, temp)
-  predicted_low = predict(lm_lower_score, temp)
-  
-  df&lt;-data.frame(seed1, seed2, higher_team, lower_team, higher_score, lower_score, predicted_high, predicted_low)
-  predicted_scores &lt;- rbind(predicted_scores, df)
-}
-
-predicted_scores &lt;- predicted_scores %&gt;%
-  mutate(real_diff = higher_score - lower_score, pred_diff = predicted_high - predicted_low)
-
-predicted_scores &lt;- predicted_scores %&gt;%
-  mutate(correct = if_else((real_diff &lt; 0 &amp; pred_diff &lt; 0) |  (real_diff &gt; 0 &amp; pred_diff &gt; 0), TRUE, FALSE))
-
-predicted_scores &lt;- predicted_scores %&gt;% unique()
-
-
-
-predicted_scores &lt;- data.frame()
-predicted_scores &lt;- predicted_scores %&gt;%
-  mutate(seed1 = &quot;&quot;, seed2 = &quot;&quot;, higherteam = &quot;&quot;, lowerteam = &quot;&quot;, winner = factor(0), pred_winner = 0)
-
-for(x in all_data$higherteam){
-  temp &lt;- all_data %&gt;%
-    filter(higherteam == x)
-  seed1 = temp$higherseed
-  seed2 = temp$lowerseed
-  higher_team = temp$higherteam
-  lower_team = temp$lowerteam
-  winner = temp$winner
-  pred_winner= predict(glm2, temp)
-  
-  df&lt;-data.frame(seed1, seed2, higher_team, lower_team, winner, pred_winner)
-  predicted_scores &lt;- rbind(predicted_scores, df)
-}
-
-predicted_scores &lt;- predicted_scores %&gt;%
-  mutate(pred_winner = if_else(pred_winner &lt; 0.1, 0, 1)) %&gt;%
-  mutate(pred_winner = factor(pred_winner)) %&gt;%
-  mutate(correct = if_else(pred_winner == winner, TRUE, FALSE))
-
-predicted_scores &lt;- predicted_scores %&gt;% unique()
-
-predicted_scores %&gt;% count(correct)</code></pre>
-<pre class="r"><code>predicted_scores2 &lt;- data.frame()
-predicted_scores2 &lt;- predicted_scores2 %&gt;%
-  mutate(higherteam = &quot;&quot;, lowerteam = &quot;&quot;, pred_winner = 0)
-
-for(x in new_data$higherseed){
-  temp &lt;- new_data %&gt;%
-    filter(higherseed == x)
-  higher_team = temp$higherseed
-  lower_team = temp$lowerseed
-  pred_winner = predict(glm1, temp)
-  df&lt;-data.frame(higher_team, lower_team, pred_winner)
-  predicted_scores2 &lt;- rbind(predicted_scores2, df)
-}
- 
-predicted_scores2 &lt;- predicted_scores2 %&gt;%
-  mutate(pred_winner = if_else(pred_winner &lt; 0.1, 0, 1)) %&gt;%
-  mutate(pred_winner = factor(pred_winner))
-
-predicted_scores2 &lt;- predicted_scores2 %&gt;% unique()</code></pre>
+data2019 &lt;- all_data %&gt;% filter(year == 2019)</code></pre>
 <pre class="r"><code>set.seed(33)
-
-most_data &lt;- most_data %&gt;%
-  mutate(diff_score = higher_score - lower_score)
 
 model_data &lt;- all_data %&gt;%
   mutate(diff_score = as.numeric(diff_score)) %&gt;%
@@ -593,17 +519,138 @@ dtrain &lt;- xgb.DMatrix(data = train_data, label= train_labels)
 dtest &lt;- xgb.DMatrix(data = test_data, label= test_labels)
 
 xgb &lt;- xgboost(data = dtrain,  
-                 nround = 20)
+                 nround = 6)
 
-pred &lt;- predict(xgb, dtest)
+params &lt;- list(booster = &quot;gbtree&quot;, objective = &quot;reg:squarederror&quot;, eta=0.3, gamma=0, max_depth=6, min_child_weight=1, subsample=1, colsample_bytree=1)
 
-err &lt;- median(pred - test_labels)
-print(paste(&quot;test-error=&quot;, err))
+xgbcv &lt;- xgb.cv(params = params, data = dtrain, nrounds = 3000, nfold = 5, showsd = T, stratified = T, print.every.n = 50, early.stop.round = 1000, maximize = F)
+
+#min(xgbcv$test.error.mean)
 
 importance_matrix &lt;- xgb.importance(names(final), model = xgb)
 
-# and plot it!
+xgb.plot.importance(importance_matrix)</code></pre>
+<pre class="r"><code>set.seed(33)
+model_data &lt;- most_data %&gt;%
+  select(total, adjo.x, adjd.x, adjt.x, adjo.y, adjd.y, adjt.y)
+model_data &lt;- model_data[sample(1:nrow(model_data)), ]
+
+labels &lt;- model_data %&gt;%
+  select(total)
+
+model_data &lt;- model_data %&gt;%
+  select(-total)
+
+final &lt;- data.matrix(model_data)
+
+numberOfTrainingSamples &lt;- round(length(labels$total) * 1)
+
+train_data &lt;- final[1:numberOfTrainingSamples,]
+train_labels &lt;- labels[1:numberOfTrainingSamples,]
+
+test_data &lt;- final[-(1:numberOfTrainingSamples),]
+test_labels &lt;- labels[-(1:numberOfTrainingSamples),]
+
+dtrain &lt;- xgb.DMatrix(data = train_data, label= train_labels)
+dtest &lt;- xgb.DMatrix(data = test_data, label= test_labels)
+
+xgb &lt;- xgboost(data = dtrain,  
+                 nround = 13)
+
+params_total &lt;- list(booster = &quot;gbtree&quot;, objective = &quot;reg:squarederror&quot;, eta=0.3, gamma=0, max_depth=6, min_child_weight=1, subsample=1, colsample_bytree=1)
+
+xgbcv &lt;- xgb.cv(params = params_total, data = dtrain, nrounds = 3000, nfold = 5, showsd = T, stratified = T, print.every.n = 20, early.stop.round = 40, maximize = F)
+
+
+importance_matrix &lt;- xgb.importance(names(final), model = xgb)
+
 xgb.plot.importance(importance_matrix)
+
+
+total_model_data &lt;- matchups %&gt;%
+  select(adjo.x, adjd.x, adjt.x, adjo.y, adjd.y, adjt.y)
+
+total_test_data2021 &lt;- as.matrix(total_model_data)
+
+dtest &lt;- xgb.DMatrix(data = total_test_data2021)
+
+total_model_data2 &lt;- total_model_data %&gt;%
+  mutate(pred_total = data.frame(predict(xgb, dtest)))
+
+matchups_with_pred_total &lt;- matchups %&gt;%
+  mutate(pred_total = total_model_data2$pred_total) %&gt;%
+  unique()</code></pre>
+<pre class="r"><code>set.seed(33)
+params &lt;- list(booster = &quot;gbtree&quot;, 
+               objective = &quot;reg:squarederror&quot;,
+               max_depth = randomsearch[1,]$max_depth,
+               eta = randomsearch[1,]$eta,
+               subsample = randomsearch[1,]$subsample,
+               colsample_bytree = randomsearch[1,]$colsample_bytree,
+               min_child_weight = randomsearch[1,]$min_child_weight)
+xgb_tuned &lt;- xgboost(params = params, data = dtrain, nrounds =15)</code></pre>
+<pre class="r"><code># Create empty lists
+lowest_error_list = list()
+parameters_list = list()
+
+# Create 10,000 rows with random hyperparameters
+set.seed(33)
+for (iter in 1:500){
+  param &lt;- list(booster = &quot;gbtree&quot;,
+                objective = &quot;reg:squarederror&quot;,
+                max_depth = sample(3:10, 1),
+                eta = runif(1, .01, .3),
+                subsample = runif(1, .7, 1),
+                colsample_bytree = runif(1, .6, 1),
+                min_child_weight = sample(0:10, 1)
+  )
+  parameters &lt;- as.data.frame(param)
+  parameters_list[[iter]] &lt;- parameters
+}
+
+# Create object that contains all randomly created hyperparameters
+parameters_df = do.call(rbind, parameters_list)
+
+# Use randomly created parameters to create 10,000 XGBoost-models
+for (row in 1:nrow(parameters_df)){
+  set.seed(33)
+  mdcv &lt;- xgb.train(data=dtrain,
+                    booster = &quot;gbtree&quot;,
+                    objective = &quot;reg:squarederror&quot;,
+                    max_depth = parameters_df$max_depth[row],
+                    eta = parameters_df$eta[row],
+                    subsample = parameters_df$subsample[row],
+                    colsample_bytree = parameters_df$colsample_bytree[row],
+                    min_child_weight = parameters_df$min_child_weight[row],
+                    nrounds= 300,
+                    eval_metric = &quot;error&quot;,
+                    early_stopping_rounds= 30,
+                    print_every_n = 100,
+                    watchlist = list(train= dtrain, val= dtest)
+  )
+  lowest_error &lt;- as.data.frame(1 - min(mdcv$evaluation_log$val_error))
+  lowest_error_list[[row]] &lt;- lowest_error
+}
+
+# Create object that contains all accuracy&#39;s
+lowest_error_df = do.call(rbind, lowest_error_list)
+
+# Bind columns of accuracy values and random hyperparameter values
+randomsearch = cbind(lowest_error_df, parameters_df)
+
+# Quickly display highest accuracy
+max(randomsearch$`1 - min(mdcv$evaluation_log$val_error)`)
+
+randomsearch &lt;- as.data.frame(randomsearch) %&gt;%
+  rename(val_acc = `1 - min(mdcv$evaluation_log$val_error)`) %&gt;%
+  arrange(-val_acc)</code></pre>
+<pre class="r"><code>for(x in 1:200){
+  xgb &lt;- xgboost(data = dtrain,  
+                 nround = x)
+  pred &lt;- predict(xgb, dtest)
+  err &lt;- median(pred - test_labels)
+  print(paste(&quot;test-error=&quot;, err))
+}
 
 test_labels &lt;- data.frame(test_labels)
 test_labels &lt;- test_labels %&gt;%
@@ -613,45 +660,49 @@ test_labels &lt;- test_labels %&gt;%
 
 median(test_labels$residual)
 
+data2019 &lt;- data2019 %&gt;%
+  mutate(total = higher_score + lower_score)
 
-new_model_data &lt;- matchups %&gt;%
-  select(adjo.x, adjd.x, adjt.x, adjo.y, adjd.y, adjt.y)
 
 test_data2019 &lt;- data2019 %&gt;%
-  select(adjo.x, adjd.x, adjt.x, adjo.y, adjd.y, adjt.y)
+  select(adjo.x, adjd.x, adjt.x, adjo.y, adjd.y, adjt.y, total)
 test_data2019_matrix &lt;- as.matrix(test_data2019)
 
 dtest &lt;- xgb.DMatrix(data = test_data2019_matrix)
 
 new_data2 &lt;- test_data2019 %&gt;%
-  mutate(pred_diff = data.frame(predict(xgb, dtest))) %&gt;% unique()
+  mutate(pred_diff = data.frame(predict(xgb_tuned, dtest))) %&gt;% 
+  mutate(pred_total = data.frame(predict(xgb, dtest))) %&gt;%
+  unique()
 
-matchups_with_pred &lt;- data2019 %&gt;%
+matchups_with_pred2019 &lt;- data2019 %&gt;%
   mutate(pred_diff = new_data2$pred_diff)
 
-matchups_with_pred &lt;- matchups_with_pred %&gt;%
+matchups_with_pred2019 &lt;- matchups_with_pred2019 %&gt;%
   mutate(score_diff = higher_score - lower_score) %&gt;%
   mutate(correct = if_else((score_diff &gt; 0 &amp; pred_diff &gt; 0) | (score_diff &lt; 0 &amp; pred_diff &lt; 0), TRUE, FALSE)) %&gt;%
   mutate(residual = score_diff - pred_diff)
          
-matchups_with_pred %&gt;% count(correct)
+matchups_with_pred2019 %&gt;% count(correct)
 matchups_with_pred %&gt;% mean(residual.predict.xgb..dtest.)
 
 
-write.csv(matchups_with_pred,&quot;matchups_with_pred.csv&quot;, row.names = TRUE)
-
 matchups_with_pred1 &lt;- matchups_with_pred[-nrow(matchups_with_pred),]
 
+
+new_model_data &lt;- matchups %&gt;%
+  select(adjo.x, adjd.x, adjt.x, adjo.y, adjd.y, adjt.y)
 
 test_data2021 &lt;- as.matrix(new_model_data)
 
 dtest &lt;- xgb.DMatrix(data = test_data2021)
 
 new_data2 &lt;- new_model_data %&gt;%
-  mutate(pred_diff = data.frame(predict(xgb, dtest))) %&gt;% unique()
+  mutate(pred_diff = data.frame(predict(xgb_tuned, dtest)))
 
 matchups_with_pred &lt;- matchups %&gt;%
-  mutate(pred_diff = new_data2$pred_diff)
+  mutate(pred_diff = new_data2$pred_diff) %&gt;%
+  unique()
 
 
 
@@ -665,10 +716,57 @@ today &lt;- data.frame(rbind(mich, norfolk, texsouth, drake)) %&gt;%
 
 dtest &lt;- xgb.DMatrix(data = as.matrix(today))
 
-today_test &lt;- data.frame(predict(xgb, dtest)) %&gt;% unique()
+today_test &lt;- data.frame(predict(xgb_tuned, dtest)) %&gt;% unique()
 
-matchups_with_pred &lt;- matchups %&gt;%
+matchups_with_pred45 &lt;- matchups %&gt;%
   mutate(pred_diff = new_data2$pred_diff)</code></pre>
+<pre class="r"><code>set.seed(33)
+
+model_data &lt;- most_data %&gt;%
+  mutate(diff_score = as.numeric(diff_score)) %&gt;%
+  select(diff_score, adjo.x, adjd.x, adjt.x, adjo.y, adjd.y, adjt.y)
+model_data &lt;- model_data[sample(1:nrow(model_data)), ]
+
+labels &lt;- model_data %&gt;%
+  select(diff_score)
+
+model_data &lt;- model_data %&gt;%
+  select(-diff_score)
+
+final &lt;- data.matrix(model_data)
+
+numberOfTrainingSamples &lt;- round(length(labels$diff_score) * 1)
+
+train_data &lt;- final[1:numberOfTrainingSamples,]
+train_labels &lt;- labels[1:numberOfTrainingSamples,]
+
+test_data &lt;- final[-(1:numberOfTrainingSamples),]
+test_labels &lt;- labels[-(1:numberOfTrainingSamples),]
+
+dtrain &lt;- xgb.DMatrix(data = train_data, label= train_labels)
+dtest &lt;- xgb.DMatrix(data = test_data, label= test_labels)
+
+xgb &lt;- xgboost(data = dtrain,  
+               nround = 13)
+
+matchups2019 &lt;- matchups2019 %&gt;% unique()
+
+test_data2019 &lt;- matchups2019 %&gt;%
+  select(adjo.x, adjd.x, adjt.x, adjo.y, adjd.y, adjt.y)
+test_data2019_matrix &lt;- as.matrix(test_data2019)
+
+dtest &lt;- xgb.DMatrix(data = test_data2019_matrix)
+#data.frame(predict(xgb_tuned, dtest))
+
+#new_data2 &lt;- test_data2019 %&gt;%
+#  mutate(pred_diff = data.frame(predict(xgb, dtest))) %&gt;% unique() 
+
+matchups_with_pred2019 &lt;- matchups2019 %&gt;%
+  mutate(pred_total = data.frame(predict(xgb, dtest)))
+
+matchups_with_pred2019$correct_spread &lt;- if_else((matchups_with_pred2019[,ncol(matchups_with_pred2019)] &gt; matchups_with_pred2019$spread &amp; matchups_with_pred2019$covered == &quot;Yes&quot;) | (matchups_with_pred2019[,ncol(matchups_with_pred2019)] &lt; matchups_with_pred2019$spread &amp; matchups_with_pred2019$covered == &quot;No&quot;), &quot;Yes&quot;, &quot;No&quot;)
+
+matchups_with_pred2019 %&gt;% count(correct_spread)</code></pre>
 
 
 
