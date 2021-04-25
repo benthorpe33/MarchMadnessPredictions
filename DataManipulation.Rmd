@@ -181,13 +181,15 @@ xgbcv <- xgb.cv(params = params, data = dtrain, nrounds = 3000, nfold = 5, shows
 importance_matrix <- xgb.importance(names(final), model = xgb)
 
 xgb.plot.importance(importance_matrix)
+
+
 ```
 
 ```{r xgboost2, eval=FALSE}
 set.seed(33)
 model_data <- most_data %>%
   select(total, adjo.x, adjd.x, adjt.x, adjo.y, adjd.y, adjt.y)
-model_data <- model_data[sample(1:nrow(model_data)), ]
+#model_data <- model_data[sample(1:nrow(model_data)), ]
 
 labels <- model_data %>%
   select(total)
@@ -197,7 +199,7 @@ model_data <- model_data %>%
 
 final <- data.matrix(model_data)
 
-numberOfTrainingSamples <- round(length(labels$total) * 1)
+numberOfTrainingSamples <- round(length(labels$total) * .75)
 
 train_data <- final[1:numberOfTrainingSamples,]
 train_labels <- labels[1:numberOfTrainingSamples,]
@@ -216,7 +218,7 @@ params_total <- list(booster = "gbtree", objective = "reg:squarederror", eta=0.3
 xgbcv <- xgb.cv(params = params_total, data = dtrain, nrounds = 3000, nfold = 5, showsd = T, stratified = T, print.every.n = 20, early.stop.round = 40, maximize = F)
 
 
-importance_matrix <- xgb.importance(names(final), model = xgb)
+importance_matrix <- xgb.importance(names(final), model = xgb_tuned)
 
 xgb.plot.importance(importance_matrix)
 
