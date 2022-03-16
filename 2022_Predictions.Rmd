@@ -1,0 +1,266 @@
+---
+title: "2022_Predictions"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load-packages, include=FALSE}
+library(rvest)
+library(XML)
+library(RCurl)
+library(tidyverse)
+library(readr)
+library(xgboost)
+library(data.table)
+library(mlr3)
+```
+
+```{r getData, eval=FALSE}
+results <- read.csv("Big_Dance_CSV.csv")
+results <- subset(results, select = -Winner )
+
+matchups <- read.csv("FirstRound2021.csv")
+
+names(matchups) <- c("higherseed", "lowerseed")
+matchups <- matchups %>%
+  mutate(lowerseed = if_else(lowerseed == "Oregon State", "Oregon St", lowerseed),
+         higherseed = if_else(higherseed == "Texas A&M Corpus Christ", "Texas A&M Corpus Chris", higherseed),
+         lowerseed = if_else(lowerseed == "Boise State", "Boise St", lowerseed))
+
+kenPomData <- data.frame()
+
+# For training purposes, get all data before the current year. Aggregate into a single data frame.
+
+getKenPomYearData <- function(year)
+{
+    theUrl <- paste0("https://kenpom.com/index.php?y=", as.character(year))
+    page <- read_html(theUrl)
+    tables <- page %>% html_nodes("table") %>% html_table()
+    data <- as.data.frame(tables[1])
+
+    colnames(data) <- c("Rk", "Team", "Conf", "Record", "AdjEM", "AdjO", 
+         "AdjO_R", "AdjD", "AdjD_R", "AdjT", "AdjT_R",
+         "Luck", "Luck_R", "SoS_AdjEM", "SoS_AdjEM_R", 
+         "OppO", "OppO_R", "OppD", "OppD_R", "NC_AdjEM", "NC_AdjEM_R")
+    
+    data$Year = year
+
+    return(data)
+}
+
+for (year in 2002:2019)
+{
+    kenPomYear <- getKenPomYearData(year)
+    kenPomData <- rbind(kenPomData, kenPomYear)
+}
+
+kenPomData <- rbind(kenPomData, getKenPomYearData(2021))
+kenPomData2022 <- getKenPomYearData(2022)
+
+names(kenPomData2022) <- tolower(names(kenPomData2022))
+names(kenPomData)<-tolower(names(kenPomData))
+names(results)<-tolower(names(results))
+```
+
+```{r cleaning, eval=FALSE}
+kenPomData <- kenPomData %>%
+  filter(rk != "Rk") %>%
+  filter(!is.na(rk)) %>%
+  filter(rk != "")
+
+kenPomData2022 <- kenPomData2022 %>%
+  filter(rk != "Rk") %>%
+  filter(!is.na(rk)) %>%
+  filter(rk != "")
+
+kenPomData <- kenPomData %>%
+  mutate(team = gsub("[.]", "", team))
+
+kenPomData$team <- gsub('[0-9]+', '', kenPomData$team)
+kenPomData$team <- trimws(kenPomData$team, "r")
+
+kenPomData2022 <- kenPomData2022 %>%
+  mutate(team = gsub("[.]", "", team))
+
+kenPomData2022$team <- gsub('[0-9]+', '', kenPomData2022$team)
+kenPomData2022$team <- trimws(kenPomData2022$team, "r")
+
+kenPomStats <- kenPomData %>% 
+  select(team, adjo, adjd, adjt, year) %>%
+  mutate(adjo = as.numeric(adjo), adjd = as.numeric
+         (adjd), adjt = as.numeric(adjt))
+
+kenPomStats2022 <- kenPomData2022 %>% 
+  select(team, adjo, adjd, adjt) %>%
+  mutate(adjo = as.numeric(adjo), adjd = as.numeric
+         (adjd), adjt = as.numeric(adjt))
+
+matchups <- matchups %>%
+  mutate(higherseed = gsub("[.]", "", higherseed), lowerseed = gsub("[.]", "", lowerseed))
+```
+
+```{r joinData, eval=FALSE}
+all_data <- merge(results, kenPomStats, by.x = c("year", "higherteam"), by.y = c("year", "team"))
+all_data <- merge(all_data, kenPomStats, by.x = c("year", "lowerteam"), by.y = c("year", "team"))
+
+matchups <- merge(matchups, kenPomStats2022, by.x = "higherseed", by.y = "team")
+matchups <- merge(matchups, kenPomStats2022, by.x = "lowerseed", by.y = "team")
+
+all_data <- all_data %>%
+  mutate(winner = if_else(score > score.1, "1", "0")) %>%
+  mutate(winner = factor(winner))
+
+#write.csv(all_data,"all_data.csv", row.names = TRUE)
+```
+
+```{r xgboost, eval=FALSE}
+set.seed(33)
+
+model_data <- all_data %>%
+  select(score, score.1, adjo.x, adjd.x, adjt.x, adjo.y, adjd.y, adjt.y)
+model_data <- model_data[sample(1:nrow(model_data)), ]
+
+labels_high <- model_data %>%
+  select(score)
+
+labels_low <- model_data %>%
+  select(score.1)
+
+model_data <- model_data %>%
+  select(-c(score, score.1))
+
+final <- data.matrix(model_data)
+
+numberOfTrainingSamples <- round(length(labels_high$score) * .75)
+
+train_data <- final[1:numberOfTrainingSamples,]
+train_labels_high <- labels_high[1:numberOfTrainingSamples,]
+train_labels_low <- labels_low[1:numberOfTrainingSamples,]
+
+test_data <- final[-(1:numberOfTrainingSamples),]
+test_labels_high <- labels_high[-(1:numberOfTrainingSamples),]
+test_labels_low <- labels_low[-(1:numberOfTrainingSamples),]
+
+dtrain_high <- xgb.DMatrix(data = train_data, label= train_labels_high)
+dtrain_low <- xgb.DMatrix(data = train_data, label= train_labels_low)
+dtest_high <- xgb.DMatrix(data = test_data, label= test_labels_high)
+dtest_low <- xgb.DMatrix(data = test_data, label= test_labels_low)
+
+params <- list(booster = "gbtree", objective = "reg:squarederror", eta=0.3, gamma=0, max_depth=6, min_child_weight=1, subsample=1, colsample_bytree=1)
+
+xgbcv_high <- xgb.cv(params = params, data = dtrain_high, nrounds = 100, nfold = 5, showsd = T, stratified = T, print_every_n = 10, early_stopping_round = 20, maximize = F)
+
+xgbcv_low <- xgb.cv(params = params, data = dtrain_low, nrounds = 100, nfold = 5, showsd = T, stratified = T, print_every_n = 10, early_stopping_round = 20, maximize = F)
+
+xgb_high <- xgboost(data = dtrain_high, nrounds = 12)
+
+xgb_low <- xgboost(data = dtrain_low, nrounds = 12)
+
+#min(xgbcv$test.error.mean)
+```
+
+```{r first_preds}
+total_model_data <- matchups %>%
+  select(adjo.x, adjd.x, adjt.x, adjo.y, adjd.y, adjt.y)
+
+total_test_data2022 <- as.matrix(total_model_data)
+
+dnew <- xgb.DMatrix(data = total_test_data2022)
+
+total_model_data2 <- total_model_data %>%
+  mutate(score1 = data.frame(predict(xgb_high, dnew)),
+         score2 = data.frame(predict(xgb_low, dnew)))
+
+matchups_with_pred <- matchups %>%
+  mutate(score1 = total_model_data2$score1,
+         score2 = total_model_data2$score2,
+         spread = score1 - score2,
+         total = score1 + score2) %>%
+  unique() %>%
+  select(higherseed, lowerseed, score1, score2, spread, total)
+```
+
+```{r tuning, eval=FALSE}
+# Create empty lists
+lowest_error_list = list()
+parameters_list = list()
+
+# Create x rows with random hyperparameters
+set.seed(33)
+for (iter in 1:10){
+  param <- list(booster = "gbtree",
+                objective = "reg:squarederror",
+                max_depth = sample(3:10, 1),
+                eta = runif(1, .01, .3),
+                subsample = runif(1, .7, 1),
+                colsample_bytree = runif(1, .6, 1),
+                min_child_weight = sample(0:10, 1)
+  )
+  parameters <- as.data.frame(param)
+  parameters_list[[iter]] <- parameters
+}
+
+# Create object that contains all randomly created hyperparameters
+parameters_df = do.call(rbind, parameters_list)
+
+# Use randomly created parameters to create 10,000 XGBoost-models
+for (row in 1:nrow(parameters_df)){
+  mdcv <- xgb.train(data=dtrain,
+                    booster = "gbtree",
+                    objective = "reg:squarederror",
+                    max_depth = parameters_df$max_depth[row],
+                    eta = parameters_df$eta[row],
+                    subsample = parameters_df$subsample[row],
+                    colsample_bytree = parameters_df$colsample_bytree[row],
+                    min_child_weight = parameters_df$min_child_weight[row],
+                    nrounds= 300,
+                    eval_metric = "error",
+                    early_stopping_rounds= 30,
+                    print_every_n = 100,
+                    watchlist = list(train= dtrain, val= dtest)
+  )
+  lowest_error <- as.data.frame(1 - min(mdcv$evaluation_log$val_error))
+  lowest_error_list[[row]] <- lowest_error
+}
+
+# Create object that contains all accuracy's
+lowest_error_df = do.call(rbind, lowest_error_list)
+
+# Bind columns of accuracy values and random hyperparameter values
+randomsearch = cbind(lowest_error_df, parameters_df)
+
+# Quickly display highest accuracy
+max(randomsearch$`1 - min(mdcv$evaluation_log$val_error)`)
+
+randomsearch <- as.data.frame(randomsearch) %>%
+  rename(val_acc = `1 - min(mdcv$evaluation_log$val_error)`) %>%
+  arrange(-val_acc)
+```
+
+```{r makeTunedModel, eval=FALSE}
+set.seed(33)
+params <- list(booster = "gbtree", 
+               objective = "reg:squarederror",
+               max_depth = randomsearch[1,]$max_depth,
+               eta = randomsearch[1,]$eta,
+               subsample = randomsearch[1,]$subsample,
+               colsample_bytree = randomsearch[1,]$colsample_bytree,
+               min_child_weight = randomsearch[1,]$min_child_weight)
+xgb_tuned <- xgboost(params = params, data = dtrain, nrounds = 25)
+```
+
+```{r test_tuned}
+total_model_data_tuned <- total_model_data %>%
+  mutate(pred_total = data.frame(predict(xgb_tuned, dnew)))
+
+matchups_with_pred_tuned <- matchups %>%
+  mutate(pred_total = total_model_data_tuned$pred_total) %>%
+  unique()
+```
+
+
+
+

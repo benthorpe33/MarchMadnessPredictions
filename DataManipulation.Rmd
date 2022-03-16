@@ -21,10 +21,7 @@ library(xgboost)
 results <- read.csv("Big_Dance_CSV.csv")
 results <- subset(results, select = -Winner )
 
-all_data <- read.csv("all_data.csv")
-all_data <- all_data %>%
-  mutate(higher_score = score, lower_score = score.1)
-all_data <- subset(all_data, select = -score.1)
+# all_data <- read.csv("all_data.csv")
 
 matchups <- read.csv("FirstRound2021.csv")
 matchups2019 <- read.csv("Spreads2019.csv")
@@ -54,59 +51,60 @@ getKenPomYearData <- function(year)
     return(data)
 }
 
-for (year in 2002:2021)
+for (year in 2002:2022)
 {
     kenPomYear <- getKenPomYearData(year)
     kenPomData <- rbind(kenPomData, kenPomYear)
 }
 
-kenPomData2021 <- getKenPomYearData(2021)
+kenPomData2022 <- getKenPomYearData(2022)
 
-names(kenPomData2021) <- tolower(names(kenPomData2021))
+names(kenPomData2022) <- tolower(names(kenPomData2022))
 names(kenPomData)<-tolower(names(kenPomData))
 names(results)<-tolower(names(results))
 ```
 
 ```{r cleaning, eval=FALSE}
-kenPomData <- kenPomData %>%
-  filter(rk != "Rk") %>%
-  filter(!is.na(rk)) %>%
-  filter(rk != "")
-
-kenPomData2021 <- kenPomData2021 %>%
-  filter(rk != "Rk") %>%
-  filter(!is.na(rk)) %>%
-  filter(rk != "")
+# kenPomData <- kenPomData %>%
+#   filter(rk != "Rk") %>%
+#   filter(!is.na(rk)) %>%
+#   filter(rk != "")
+# 
+# kenPomData2022 <- kenPomData2022 %>%
+#   filter(rk != "Rk") %>%
+#   filter(!is.na(rk)) %>%
+#   filter(rk != "")
 
 kenPomData <- kenPomData %>%
   mutate(team = gsub("[.]", "", team))
 
-kenPomData$team <- gsub('[0-9]+', '', kenPomData2021$team)
+kenPomData$team <- gsub('[0-9]+', '', kenPomData$team)
 kenPomData$team <- trimws(kenPomData$team, "r")
 
-kenPomData2021 <- kenPomData2021 %>%
+kenPomData2022 <- kenPomData2022 %>%
   mutate(team = gsub("[.]", "", team))
 
-kenPomData2021$team <- gsub('[0-9]+', '', kenPomData2021$team)
-kenPomData2021$team <- trimws(kenPomData2021$team, "r")
+kenPomData2022$team <- gsub('[0-9]+', '', kenPomData2022$team)
+kenPomData2022$team <- trimws(kenPomData2022$team, "r")
 
-kenPomData2021 <- kenPomData2021 %>% 
+kenPomData2022 <- kenPomData2022 %>% 
   select(team, adjo, adjd, adjt) %>%
   mutate(adjo = as.numeric(adjo), adjd = as.numeric
          (adjd), adjt = as.numeric(adjt))
 
-kenPomData <- subset(kenPomData, select = -c(conf, nc_adjem, nc_adjem_r, sos_adjem, sos_adjem_r, oppo, oppo_r, oppd, oppd_r))
+# kenPomData <- subset(kenPomData, select = -c(conf, nc_adjem, nc_adjem_r, sos_adjem, sos_adjem_r, oppo, oppo_r, oppd, oppd_r))
 
+names(matchups) <- c("higherseed", "lowerseed")
 matchups <- matchups %>%
   mutate(higherseed = gsub("[.]", "", higherseed), lowerseed = gsub("[.]", "", lowerseed))
 
-matchups2019 <- matchups2019 %>%
-  mutate(higherseed = gsub("[.]", "", higherseed), lowerseed = gsub("[.]", "", lowerseed))  
+# names(matchups2019) <- c("higherseed", "lowerseed", "spread", "covered")
+# matchups2019 <- matchups2019 %>%
+#   mutate(higherseed = gsub("[.]", "", higherseed), lowerseed = gsub("[.]", "", lowerseed))  
 
-matchups2019 <- matchups2019 %>%
-  mutate(adjo.x = as.numeric(adjo.x), adjd.x = as.numeric
-         (adjd.x), adjt.x = as.numeric(adjt.x), adjo.y = as.numeric(adjo.y), adjd.y = as.numeric
-         (adjd.y), adjt.y = as.numeric(adjt.y))
+# matchups2019 <- matchups2019 %>%
+#   mutate(adjo.x = as.numeric(adjo.x), adjd.x = as.numeric
+#          (adjd.x), adjt.x = as.numeric(adjt.x), adjo.y = as.numeric(adjo.y), adjd.y = as.numeric(adjd.y), adjt.y = as.numeric(adjt.y))
 ```
 
 ```{r joinData, eval=FALSE}
@@ -115,8 +113,8 @@ real_data <- merge(results, kenPomData, by.x = c("year", "higherteam"), by.y = c
 kenPom2019 <- kenPomData %>%
   filter(year == 2019)
 
-matchups <- merge(matchups, kenPomData2021, by.x = "higherseed", by.y = "team")
-matchups <- merge(matchups, kenPomData2021, by.x = "lowerseed", by.y = "team")
+matchups <- merge(matchups, kenPomData2022, by.x = "higherseed", by.y = "team")
+matchups <- merge(matchups, kenPomData2022, by.x = "lowerseed", by.y = "team")
 matchups2019 <- merge(matchups2019, kenPom2019, by.x = "lowerseed", by.y = "team")
 matchups2019 <- matchups2019 %>% unique()
 
@@ -226,9 +224,9 @@ xgb.plot.importance(importance_matrix)
 total_model_data <- matchups %>%
   select(adjo.x, adjd.x, adjt.x, adjo.y, adjd.y, adjt.y)
 
-total_test_data2021 <- as.matrix(total_model_data)
+total_test_data2022 <- as.matrix(total_model_data)
 
-dtest <- xgb.DMatrix(data = total_test_data2021)
+dtest <- xgb.DMatrix(data = total_test_data2022)
 
 total_model_data2 <- total_model_data %>%
   mutate(pred_total = data.frame(predict(xgb, dtest)))
@@ -359,9 +357,9 @@ matchups_with_pred1 <- matchups_with_pred[-nrow(matchups_with_pred),]
 new_model_data <- matchups %>%
   select(adjo.x, adjd.x, adjt.x, adjo.y, adjd.y, adjt.y)
 
-test_data2021 <- as.matrix(new_model_data)
+test_data2022 <- as.matrix(new_model_data)
 
-dtest <- xgb.DMatrix(data = test_data2021)
+dtest <- xgb.DMatrix(data = test_data2022)
 
 new_data2 <- new_model_data %>%
   mutate(pred_diff = data.frame(predict(xgb_tuned, dtest)))
